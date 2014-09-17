@@ -1,6 +1,7 @@
 package com.viskan.quartz.elasticsearch;
 
 import com.viskan.quartz.elasticsearch.serializer.ISerializer;
+import com.viskan.quartz.elasticsearch.serializer.TypeToken;
 
 import static java.util.Arrays.asList;
 
@@ -10,7 +11,6 @@ import java.util.List;
 import com.google.gson.FieldNamingStrategy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
 
 /**
  * Gson implementation of {@link ISerializer}.

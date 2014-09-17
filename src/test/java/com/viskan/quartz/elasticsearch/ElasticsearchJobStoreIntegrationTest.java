@@ -50,7 +50,7 @@ public class ElasticsearchJobStoreIntegrationTest extends Assert
 			.withIdentity("Job1_Trigger1", "Group1")
 			.forJob(newJob)
 			.withSchedule(SimpleScheduleBuilder.simpleSchedule()
-				.withIntervalInSeconds(1)
+				.withIntervalInSeconds(30)
 				.repeatForever())
 			.startNow()
 			.build();

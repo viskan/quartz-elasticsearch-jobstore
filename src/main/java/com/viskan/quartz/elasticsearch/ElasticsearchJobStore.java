@@ -9,11 +9,18 @@ import com.viskan.quartz.elasticsearch.domain.TriggerWrapper;
 import com.viskan.quartz.elasticsearch.http.HttpCommunicator;
 import com.viskan.quartz.elasticsearch.http.HttpResponse;
 import com.viskan.quartz.elasticsearch.serializer.ISerializer;
+import com.viskan.quartz.elasticsearch.serializer.TypeToken;
+import com.viskan.quartz.elasticsearch.utils.JobUtils;
 import com.viskan.quartz.elasticsearch.utils.TriggerUtils;
 
 import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_ACQUIRED;
+import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_COMPLETED;
+import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_ERROR;
+import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_EXECUTING;
 import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_WAITING;
 import static com.viskan.quartz.elasticsearch.http.HttpResponse.isOK;
+import static com.viskan.quartz.elasticsearch.utils.TriggerUtils.fromWrapper;
+import static com.viskan.quartz.elasticsearch.utils.TriggerUtils.toTriggerWrapper;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,11 +46,10 @@ import org.quartz.spi.ClassLoadHelper;
 import org.quartz.spi.JobStore;
 import org.quartz.spi.OperableTrigger;
 import org.quartz.spi.SchedulerSignaler;
+import org.quartz.spi.TriggerFiredBundle;
 import org.quartz.spi.TriggerFiredResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.google.gson.reflect.TypeToken;
 
 /**
  * Implementation of {@link JobStore} that stores jobs, triggers and calendars
@@ -65,7 +71,8 @@ public class ElasticsearchJobStore implements JobStore
 	private String serializerClassName;
 	
 	// Internal variables
-	HttpCommunicator httpCommunicator;
+	private SchedulerSignaler signaler;
+	private HttpCommunicator httpCommunicator;
 	private ISerializer serializer;
 	
 	/**
@@ -188,6 +195,8 @@ public class ElasticsearchJobStore implements JobStore
 	@Override
 	public void initialize(ClassLoadHelper loadHelper, SchedulerSignaler signaler) throws SchedulerConfigException
 	{
+		this.signaler = signaler;
+		
 		checkSetting(hostName,				"org.quartz.jobStore.hostName");
 		checkSetting(port,					"org.quartz.jobStore.port");
 		checkSetting(indexName,				"org.quartz.jobStore.indexName");
@@ -199,9 +208,19 @@ public class ElasticsearchJobStore implements JobStore
 		createSerializer();
 	}
 
+	/**
+	 * Sets the HTTP communicator.
+	 * <p>
+	 * Exposed as package private to enable mocking.
+	 */
+	void createHttpCommunicator(HttpCommunicator httpCommunicator)
+	{
+		this.httpCommunicator = httpCommunicator;
+	}
+
 	private void createHttpCommunicator()
 	{
-		httpCommunicator = new HttpCommunicator();
+		createHttpCommunicator(new HttpCommunicator());
 	}
 
 	private void createSerializer() throws SchedulerConfigException
@@ -310,6 +329,8 @@ public class ElasticsearchJobStore implements JobStore
 		JobWrapper jobWrapper = new JobWrapper();
 		jobWrapper.setName(key.getName());
 		jobWrapper.setGroup(key.getGroup());
+		jobWrapper.setJobClass(newJob.getJobClass().getName());
+		jobWrapper.setDataMap(newJob.getJobDataMap().getWrappedMap());
 		String requestData = serializer.to(jobWrapper);
 		
 		HttpResponse response = httpCommunicator.request("PUT", jobURL, requestData);
@@ -354,23 +375,56 @@ public class ElasticsearchJobStore implements JobStore
 
 	/** {@inheritDoc} */
 	@Override
-	public boolean removeJob(JobKey jobKey) throws JobPersistenceException
+	public boolean removeJob(JobKey key) throws JobPersistenceException
 	{
-		return false;
+		String requestURL = getTypeURL(JOB_TYPE, key.toString());
+		HttpResponse response = httpCommunicator.request("DELETE", requestURL);
+		
+		if (isOK(response))
+		{
+			LOGGER.debug("Successfully removed job {}", key);
+			return true;
+		}
+		else
+		{
+			LOGGER.warn("Got '{} {}' when attempting to remove job {}", new Object[] { response.getResponseCode(), response.getResponseMessage(), key });
+			return false;
+		}
 	}
 
 	/** {@inheritDoc} */
 	@Override
-	public boolean removeJobs(List<JobKey> jobKeys) throws JobPersistenceException
+	public boolean removeJobs(List<JobKey> keys) throws JobPersistenceException
 	{
-		return false;
+		boolean failed = false;
+		for (JobKey key : keys)
+		{
+			failed |= !removeJob(key);
+		}
+		return failed;
 	}
 
 	/** {@inheritDoc} */
 	@Override
 	public JobDetail retrieveJob(JobKey jobKey) throws JobPersistenceException
 	{
-		return null;
+		String requestURL = getTypeURL(JOB_TYPE, jobKey.toString());
+		HttpResponse response = httpCommunicator.request("GET", requestURL);
+		if (!isOK(response))
+		{
+			LOGGER.debug("Error when requesting job {}", jobKey);
+			return null;
+		}
+		
+		GetResult<JobWrapper> result = serializer.from(response.getResponseData(), new TypeToken<GetResult<JobWrapper>>() {});
+		if (!result.isFound())
+		{
+			LOGGER.debug("Did not find any jobs with the key {}", jobKey);
+			return null;
+		}
+		
+		JobWrapper jobWrapper = result.getSource();
+		return JobUtils.getJobFromWrapper(jobWrapper);
 	}
 
 	/** {@inheritDoc} */
@@ -380,15 +434,7 @@ public class ElasticsearchJobStore implements JobStore
 		TriggerKey key = newTrigger.getKey();
 		String requestURL = getTypeURL(TRIGGER_TYPE, key.toString());
 
-		TriggerWrapper triggerWrapper = new TriggerWrapper();
-		triggerWrapper.setName(key.getName());
-		triggerWrapper.setGroup(key.getGroup());
-		triggerWrapper.setTriggerClass(TriggerUtils.getTriggerClass(newTrigger));
-		triggerWrapper.setState(STATE_WAITING);
-		triggerWrapper.setStartTime(getTime(newTrigger.getStartTime()));
-		triggerWrapper.setEndTime(getTime(newTrigger.getEndTime()));
-		triggerWrapper.setNextFireTime(getTime(newTrigger.getNextFireTime()));
-		triggerWrapper.setPreviousFireTime(getTime(newTrigger.getPreviousFireTime()));
+		TriggerWrapper triggerWrapper = toTriggerWrapper(newTrigger, STATE_WAITING);
 		String requestData = serializer.to(triggerWrapper);
 		
 		HttpResponse response = httpCommunicator.request("PUT", requestURL, requestData);
@@ -412,30 +458,44 @@ public class ElasticsearchJobStore implements JobStore
 		LOGGER.info("Succesfully stored trigger '{}'", key.toString());
 	}
 
-	private long getTime(Date date)
+	/** {@inheritDoc} */
+	@Override
+	public boolean removeTrigger(TriggerKey key) throws JobPersistenceException
 	{
-		return date != null ? date.getTime() : 0;
+		String requestURL = getTypeURL(TRIGGER_TYPE, key.toString());
+		HttpResponse response = httpCommunicator.request("DELETE", requestURL);
+		
+		if (isOK(response))
+		{
+			LOGGER.debug("Successfully removed trigger {}", key);
+			return true;
+		}
+		else
+		{
+			LOGGER.warn("Got '{} {}' when attempting to remove trigger {}", new Object[] { response.getResponseCode(), response.getResponseMessage(), key });
+			return false;
+		}
 	}
 
 	/** {@inheritDoc} */
 	@Override
-	public boolean removeTrigger(TriggerKey triggerKey) throws JobPersistenceException
+	public boolean removeTriggers(List<TriggerKey> keys) throws JobPersistenceException
 	{
-		return false;
+		boolean failed = false;
+		for (TriggerKey key : keys)
+		{
+			failed |= !removeTrigger(key);
+		}
+		return failed;
 	}
 
 	/** {@inheritDoc} */
 	@Override
-	public boolean removeTriggers(List<TriggerKey> triggerKeys) throws JobPersistenceException
+	public boolean replaceTrigger(TriggerKey key, OperableTrigger newTrigger) throws JobPersistenceException
 	{
-		return false;
-	}
-
-	/** {@inheritDoc} */
-	@Override
-	public boolean replaceTrigger(TriggerKey triggerKey, OperableTrigger newTrigger) throws JobPersistenceException
-	{
-		return false;
+		boolean removed = removeTrigger(key);
+		storeTrigger(newTrigger, false);
+		return removed;
 	}
 
 	/** {@inheritDoc} */
@@ -676,7 +736,7 @@ public class ElasticsearchJobStore implements JobStore
 			
 			if (isOK(response))
 			{
-				OperableTrigger operableTrigger = TriggerUtils.getTriggerFromWrapper(triggerWrapper);
+				OperableTrigger operableTrigger = TriggerUtils.fromWrapper(triggerWrapper);
 				acquiredTriggers.add(operableTrigger);
 				
 				// Have we gotten enough triggers?
@@ -731,7 +791,83 @@ public class ElasticsearchJobStore implements JobStore
 	@Override
 	public List<TriggerFiredResult> triggersFired(List<OperableTrigger> triggers) throws JobPersistenceException
 	{
-		return null;
+		List<TriggerFiredResult> fireResult = new ArrayList<>();
+		
+		for (OperableTrigger trigger : triggers)
+		{
+			TriggerKey key = trigger.getKey();
+			LOGGER.debug("Firing trigger {}", key);
+			
+			// Get the trigger to retrieve the version number
+			String requestURL = getTypeURL(TRIGGER_TYPE, key.toString());
+			HttpResponse response = httpCommunicator.request("GET", requestURL);
+			if (!isOK(response))
+			{
+				fireResult.add(fireError("Error when requesting trigger " + key));
+				continue;
+			}
+			GetResult<TriggerWrapper> result = serializer.from(response.getResponseData(), new TypeToken<GetResult<TriggerWrapper>>() {});
+			
+			// If the requested trigger was not found, continue to the next
+			if (!result.isFound())
+			{
+				fireResult.add(fireError("Trigger " + key + " was requested, but not found when requesting it"));
+				continue;
+			}
+			
+			// If the trigger actually did not have a waiting state, continue to the next
+			if (result.getSource().getState() != STATE_ACQUIRED)
+			{
+				LOGGER.debug("Trigger {} is not acquired", key);
+				fireResult.add(fireError());
+				continue;
+			}
+			
+			// Update the state of the trigger
+			TriggerWrapper triggerWrapper = result.getSource();
+			triggerWrapper.setState(STATE_EXECUTING);
+			String requestData = serializer.to(triggerWrapper);
+			requestURL = requestURL + "?version=" + result.getVersion();
+			response = httpCommunicator.request("PUT", requestURL, requestData);
+			
+			if (isOK(response))
+			{
+				TriggerFiredBundle triggerFiredBundle = getTriggeredFireBundle(triggerWrapper);
+				fireResult.add(new TriggerFiredResult(triggerFiredBundle));
+			}
+			else
+			{
+				// This should not technically happen, but we do this to be sure
+				fireResult.add(fireError());
+			}
+		}
+		
+		return fireResult;
+	}
+	
+	private TriggerFiredBundle getTriggeredFireBundle(TriggerWrapper triggerWrapper) throws JobPersistenceException
+	{
+		JobKey jobKey = new JobKey(triggerWrapper.getJobName(), triggerWrapper.getJobGroup());
+		JobDetail job = retrieveJob(jobKey);
+		OperableTrigger trigger = fromWrapper(triggerWrapper);
+		
+		Date scheduledFireTime = trigger.getPreviousFireTime();
+		trigger.triggered(null);
+		Date previousFireTime = trigger.getPreviousFireTime();
+		
+		return new TriggerFiredBundle(job, trigger, null, false, new Date(), scheduledFireTime, previousFireTime, trigger.getNextFireTime());
+	}
+
+	private TriggerFiredResult fireError(String message)
+	{
+		RuntimeException exception = new RuntimeException(message);
+		return new TriggerFiredResult(exception);
+	}
+	
+	private TriggerFiredResult fireError()
+	{
+		TriggerFiredBundle bundle = null;
+		return new TriggerFiredResult(bundle);
 	}
 
 	/** {@inheritDoc} */
@@ -739,6 +875,114 @@ public class ElasticsearchJobStore implements JobStore
 	public void triggeredJobComplete(OperableTrigger trigger, JobDetail jobDetail,
 			CompletedExecutionInstruction triggerInstCode)
 	{
+		List<OperableTrigger> triggersForJob = null;
+		LOGGER.debug("Job {} completed and was triggered by {}", jobDetail.getKey(), trigger.getKey());
+
+		try
+		{
+			boolean signal = true;
+			switch (triggerInstCode)
+			{
+				case NOOP:
+					updateTrigger(trigger, STATE_WAITING);
+					break;
+					
+				case DELETE_TRIGGER:
+					signal = deleteTrigger(trigger);
+					break;
+					
+				case SET_TRIGGER_COMPLETE:
+					updateTrigger(trigger, STATE_COMPLETED);
+					break;
+
+				case SET_TRIGGER_ERROR:
+					updateTrigger(trigger, STATE_ERROR);
+					break;
+					
+				case SET_ALL_JOB_TRIGGERS_COMPLETE:
+					triggersForJob = getTriggersForJob(jobDetail.getKey());
+					for (OperableTrigger triggerForJob : triggersForJob)
+					{
+						updateTrigger(triggerForJob, STATE_COMPLETED);
+					}
+					break;
+					
+				case SET_ALL_JOB_TRIGGERS_ERROR:
+					triggersForJob = getTriggersForJob(jobDetail.getKey());
+					for (OperableTrigger triggerForJob : triggersForJob)
+					{
+						updateTrigger(triggerForJob, STATE_ERROR);
+					}
+					break;
+					
+				case RE_EXECUTE_JOB:
+					LOGGER.warn("Not yet implemented!");
+					break;
+			}
+			if (signal)
+			{
+                signaler.signalSchedulingChange(0L);
+			}
+		}
+		catch (JobPersistenceException e)
+		{
+			LOGGER.error("Exception occurred when handling completed job " + jobDetail.getKey(), e);
+		}
+	}
+
+	private void updateTrigger(OperableTrigger trigger, int state)
+	{
+		try
+		{
+			// Get the trigger to retrieve the version number
+			String requestURL = getTypeURL(TRIGGER_TYPE, trigger.getKey().toString());
+			HttpResponse response = httpCommunicator.request("GET", requestURL);
+			if (!isOK(response))
+			{
+				LOGGER.warn("Error when requesting trigger {}", trigger.getKey());
+				return;
+			}
+			GetResult<TriggerWrapper> result = serializer.from(response.getResponseData(), new TypeToken<GetResult<TriggerWrapper>>() {});
+			
+			// If the requested trigger was not found, continue to the next
+			if (!result.isFound())
+			{
+				LOGGER.warn("Trigger {} was requested, but not found when requesting it", trigger.getKey());
+				return;
+			}
+			
+			// Update the state and times of the trigger
+			TriggerWrapper triggerWrapper = toTriggerWrapper(trigger, state);
+			String requestData = serializer.to(triggerWrapper);
+			requestURL = requestURL + "?version=" + result.getVersion();
+			response = httpCommunicator.request("PUT", requestURL, requestData);
+			
+			if (isOK(response))
+			{
+				LOGGER.debug("Successfully updated trigger {}", trigger.getKey());
+			}
+			else
+			{
+				LOGGER.error("Got error code '{} {}' when updating trigger {}", new Object[] { response.getResponseCode(), response.getResponseMessage(), trigger.getKey() });
+			}
+		}
+		catch (JobPersistenceException e)
+		{
+			LOGGER.error("Exception occurred when updating trigger " + trigger.getKey(), e);
+		}
+	}
+
+	private boolean deleteTrigger(OperableTrigger trigger) throws JobPersistenceException
+	{
+		removeTrigger(trigger.getKey());
+		if (trigger.getNextFireTime() == null)
+		{
+			return false;
+		}
+		else
+		{
+			return true;
+		}
 	}
 
 	/** Does nothing. */

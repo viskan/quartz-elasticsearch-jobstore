@@ -4,6 +4,7 @@ import com.viskan.quartz.elasticsearch.domain.TriggerWrapper;
 
 import java.util.Date;
 
+import org.quartz.JobKey;
 import org.quartz.TriggerKey;
 import org.quartz.impl.triggers.SimpleTriggerImpl;
 import org.quartz.spi.OperableTrigger;
@@ -21,13 +22,7 @@ public final class TriggerUtils
 	{
 	}
 	
-	/**
-	 * Gets the trigger class in a refactoring-friendly manner.
-	 * 
-	 * @param trigger The trigger to get class from.
-	 * @return Returns the class of the trigger.
-	 */
-	public static String getTriggerClass(OperableTrigger trigger)
+	private static String getTriggerClass(OperableTrigger trigger)
 	{
 		Class<?> clazz = trigger.getClass();
 		if (clazz.equals(SimpleTriggerImpl.class))
@@ -43,7 +38,7 @@ public final class TriggerUtils
 	 * @param triggerWrapper The wrapper to create trigger from.
 	 * @return Returns the created {@link OperableTrigger}.
 	 */
-	public static OperableTrigger getTriggerFromWrapper(TriggerWrapper triggerWrapper)
+	public static OperableTrigger fromWrapper(TriggerWrapper triggerWrapper)
 	{
 		String triggerClass = triggerWrapper.getTriggerClass();
 		switch (triggerClass)
@@ -60,20 +55,69 @@ public final class TriggerUtils
 	{
 		String name = triggerWrapper.getName();
 		String group = triggerWrapper.getGroup();
+		String jobName = triggerWrapper.getJobName();
+		String jobGroup = triggerWrapper.getJobGroup();
 		
 		SimpleTriggerImpl trigger = new SimpleTriggerImpl();
 		trigger.setKey(new TriggerKey(name, group));
 		trigger.setName(name);
 		trigger.setGroup(group);
+		trigger.setJobKey(new JobKey(jobName, jobGroup));
+		trigger.setJobName(jobName);
+		trigger.setJobGroup(jobGroup);
 		trigger.setStartTime(getTime(triggerWrapper.getStartTime()));
 		trigger.setEndTime(getTime(triggerWrapper.getEndTime()));
 		trigger.setNextFireTime(getTime(triggerWrapper.getNextFireTime()));
 		trigger.setPreviousFireTime(getTime(triggerWrapper.getPreviousFireTime()));
+		trigger.setRepeatCount(triggerWrapper.getRepeatCount());
+		trigger.setRepeatInterval(triggerWrapper.getRepeatInterval());
+		trigger.setTimesTriggered(triggerWrapper.getTimesTriggered());
 		return trigger;
 	}
 	
+	/**
+	 * Creates a {@link TriggerWrapper} from a real {@link OperableTrigger}.
+	 * 
+	 * @param trigger Trigger to create wrapper for.
+	 * @param state The state to use.
+	 * @return Returns the created {@link TriggerWrapper}.
+	 */
+	public static TriggerWrapper toTriggerWrapper(OperableTrigger trigger, int state)
+	{
+		TriggerWrapper triggerWrapper = new TriggerWrapper();
+		triggerWrapper.setName(trigger.getKey().getName());
+		triggerWrapper.setGroup(trigger.getKey().getGroup());
+		triggerWrapper.setJobName(trigger.getJobKey().getName());
+		triggerWrapper.setJobGroup(trigger.getJobKey().getGroup());
+		triggerWrapper.setTriggerClass(getTriggerClass(trigger));
+		triggerWrapper.setState(state);
+		triggerWrapper.setStartTime(getTime(trigger.getStartTime()));
+		triggerWrapper.setEndTime(getTime(trigger.getEndTime()));
+		triggerWrapper.setNextFireTime(getTime(trigger.getNextFireTime()));
+		triggerWrapper.setPreviousFireTime(getTime(trigger.getPreviousFireTime()));
+		
+		if (trigger instanceof SimpleTriggerImpl)
+		{
+			addSimpleTriggerImplProperties(triggerWrapper, (SimpleTriggerImpl) trigger);
+		}
+		
+		return triggerWrapper;
+	}
+	
+	private static void addSimpleTriggerImplProperties(TriggerWrapper triggerWrapper, SimpleTriggerImpl trigger)
+	{
+		triggerWrapper.setRepeatCount(trigger.getRepeatCount());
+		triggerWrapper.setRepeatInterval(trigger.getRepeatInterval());
+		triggerWrapper.setTimesTriggered(trigger.getTimesTriggered());
+	}
+
 	private static Date getTime(long time)
 	{
 		return time > 0 ? new Date(time) : null;
+	}
+
+	private static long getTime(Date date)
+	{
+		return date != null ? date.getTime() : 0;
 	}
 }

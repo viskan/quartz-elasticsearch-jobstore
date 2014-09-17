@@ -44,7 +44,7 @@ public class QuartzIntegrationTest
 			.withIdentity("Job1_Trigger1", "Group1")
 			.forJob(jobDetail)
 			.withSchedule(SimpleScheduleBuilder.simpleSchedule()
-				.withIntervalInSeconds(1)
+				.withIntervalInSeconds(30)
 				.repeatForever())
 			.startNow()
 			.build();
@@ -59,8 +59,11 @@ public class QuartzIntegrationTest
 		// General quartz configuration
 		properties.setProperty("org.quartz.scheduler.instanceName", "MyScheduler");
 		properties.setProperty("org.quartz.scheduler.instanceId", "1");
+		properties.setProperty("org.quartz.scheduler.idleWaitTime", "15000");
 		properties.setProperty("org.quartz.scheduler.rmi.export", "false");
 		properties.setProperty("org.quartz.scheduler.rmi.proxy", "false");
+		
+		// Thread configuration
 		properties.setProperty("org.quartz.threadPool.class", "org.quartz.simpl.SimpleThreadPool");
 		properties.setProperty("org.quartz.threadPool.threadCount", "3");
 		

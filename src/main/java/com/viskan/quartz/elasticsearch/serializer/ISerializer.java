@@ -1,7 +1,5 @@
 package com.viskan.quartz.elasticsearch.serializer;
 
-import com.google.gson.reflect.TypeToken;
-
 /**
  * Defines how objects should be serialized from and to JSON.
  * <p>
