@@ -10,8 +10,6 @@ import com.viskan.quartz.elasticsearch.http.HttpCommunicator;
 import com.viskan.quartz.elasticsearch.http.HttpResponse;
 import com.viskan.quartz.elasticsearch.serializer.ISerializer;
 import com.viskan.quartz.elasticsearch.serializer.TypeToken;
-import com.viskan.quartz.elasticsearch.utils.JobUtils;
-import com.viskan.quartz.elasticsearch.utils.TriggerUtils;
 
 import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_ACQUIRED;
 import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_COMPLETED;
@@ -19,6 +17,7 @@ import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_ERROR;
 import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_EXECUTING;
 import static com.viskan.quartz.elasticsearch.domain.TriggerWrapper.STATE_WAITING;
 import static com.viskan.quartz.elasticsearch.http.HttpResponse.isOK;
+import static com.viskan.quartz.elasticsearch.utils.JobUtils.fromWrapper;
 import static com.viskan.quartz.elasticsearch.utils.TriggerUtils.fromWrapper;
 import static com.viskan.quartz.elasticsearch.utils.TriggerUtils.toTriggerWrapper;
 
@@ -424,7 +423,7 @@ public class ElasticsearchJobStore implements JobStore
 		}
 		
 		JobWrapper jobWrapper = result.getSource();
-		return JobUtils.getJobFromWrapper(jobWrapper);
+		return fromWrapper(jobWrapper);
 	}
 
 	/** {@inheritDoc} */
@@ -736,7 +735,7 @@ public class ElasticsearchJobStore implements JobStore
 			
 			if (isOK(response))
 			{
-				OperableTrigger operableTrigger = TriggerUtils.fromWrapper(triggerWrapper);
+				OperableTrigger operableTrigger = fromWrapper(triggerWrapper);
 				acquiredTriggers.add(operableTrigger);
 				
 				// Have we gotten enough triggers?

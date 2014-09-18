@@ -28,7 +28,7 @@ public final class JobUtils
 	 * 
 	 * @throws JobPersistenceException Thrown if job class could not be found.
 	 */
-	public static JobDetail getJobFromWrapper(JobWrapper jobWrapper) throws JobPersistenceException
+	public static JobDetail fromWrapper(JobWrapper jobWrapper) throws JobPersistenceException
 	{
 		String name = jobWrapper.getName();
 		String group = jobWrapper.getGroup();
