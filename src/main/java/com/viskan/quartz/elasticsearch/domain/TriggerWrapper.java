@@ -27,6 +27,7 @@ public class TriggerWrapper
 	private int repeatCount;
 	private long repeatInterval;
 	private int timesTriggered;
+	private String cronExpression;
 
 	public String getName()
 	{
@@ -166,5 +167,15 @@ public class TriggerWrapper
 	public void setTimesTriggered(int simpleTriggerTimesTriggered)
 	{
 		this.timesTriggered = simpleTriggerTimesTriggered;
+	}
+
+	public String getCronExpression()
+	{
+		return cronExpression;
+	}
+
+	public void setCronExpression(String cronExpression)
+	{
+		this.cronExpression = cronExpression;
 	}
 }

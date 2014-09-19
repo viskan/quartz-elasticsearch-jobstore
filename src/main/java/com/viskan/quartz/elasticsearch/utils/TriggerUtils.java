@@ -2,12 +2,17 @@ package com.viskan.quartz.elasticsearch.utils;
 
 import com.viskan.quartz.elasticsearch.domain.TriggerWrapper;
 
+import java.text.ParseException;
 import java.util.Date;
 
 import org.quartz.JobKey;
 import org.quartz.TriggerKey;
+import org.quartz.impl.triggers.AbstractTrigger;
+import org.quartz.impl.triggers.CronTriggerImpl;
 import org.quartz.impl.triggers.SimpleTriggerImpl;
 import org.quartz.spi.OperableTrigger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Provides utilities for managing triggers.
@@ -16,7 +21,9 @@ import org.quartz.spi.OperableTrigger;
  */
 public final class TriggerUtils
 {
+	private static final Logger LOGGER = LoggerFactory.getLogger(TriggerUtils.class);
 	private static final String SIMPLE_TRIGGER_IMPL = "SIMPLE_TRIGGER_IMPL";
+	private static final String CRON_TRIGGER_IMPL = "CRON_TRIGGER_IMPL";
 
 	private TriggerUtils()
 	{
@@ -28,6 +35,10 @@ public final class TriggerUtils
 		if (clazz.equals(SimpleTriggerImpl.class))
 		{
 			return SIMPLE_TRIGGER_IMPL;
+		}
+		if (clazz.equals(CronTriggerImpl.class))
+		{
+			return CRON_TRIGGER_IMPL;
 		}
 		throw new UnsupportedOperationException("Class of type '" + clazz.getName() + "' is not supported");
 	}
@@ -46,6 +57,9 @@ public final class TriggerUtils
 			case SIMPLE_TRIGGER_IMPL:
 				return getSimpleTriggerImpl(triggerWrapper);
 				
+			case CRON_TRIGGER_IMPL:
+				return getCronTriggerImpl(triggerWrapper);
+				
 			default:
 				throw new UnsupportedOperationException("Trigger class name '" + triggerClass + "' cannot be matched to an actual trigger");
 		}
@@ -53,12 +67,42 @@ public final class TriggerUtils
 
 	private static OperableTrigger getSimpleTriggerImpl(TriggerWrapper triggerWrapper)
 	{
+		SimpleTriggerImpl trigger = new SimpleTriggerImpl();
+		setCommonProperties(triggerWrapper, trigger);
+		trigger.setRepeatCount(triggerWrapper.getRepeatCount());
+		trigger.setRepeatInterval(triggerWrapper.getRepeatInterval());
+		trigger.setTimesTriggered(triggerWrapper.getTimesTriggered());
+		return trigger;
+	}
+
+	private static OperableTrigger getCronTriggerImpl(TriggerWrapper triggerWrapper)
+	{
+		CronTriggerImpl trigger = new CronTriggerImpl();
+		setCommonProperties(triggerWrapper, trigger);
+		setCronExpression(triggerWrapper, trigger);
+		return trigger;
+	}
+
+	private static void setCronExpression(TriggerWrapper triggerWrapper, CronTriggerImpl trigger)
+	{
+		String expression = triggerWrapper.getCronExpression();
+		try
+		{
+			trigger.setCronExpression(expression);
+		}
+		catch (ParseException e)
+		{
+			LOGGER.error("Could not parse cron expression '" + expression + "'", e);
+		}
+	}
+
+	private static void setCommonProperties(TriggerWrapper triggerWrapper, AbstractTrigger<?> trigger)
+	{
 		String name = triggerWrapper.getName();
 		String group = triggerWrapper.getGroup();
 		String jobName = triggerWrapper.getJobName();
 		String jobGroup = triggerWrapper.getJobGroup();
 		
-		SimpleTriggerImpl trigger = new SimpleTriggerImpl();
 		trigger.setKey(new TriggerKey(name, group));
 		trigger.setName(name);
 		trigger.setGroup(group);
@@ -69,10 +113,6 @@ public final class TriggerUtils
 		trigger.setEndTime(getTime(triggerWrapper.getEndTime()));
 		trigger.setNextFireTime(getTime(triggerWrapper.getNextFireTime()));
 		trigger.setPreviousFireTime(getTime(triggerWrapper.getPreviousFireTime()));
-		trigger.setRepeatCount(triggerWrapper.getRepeatCount());
-		trigger.setRepeatInterval(triggerWrapper.getRepeatInterval());
-		trigger.setTimesTriggered(triggerWrapper.getTimesTriggered());
-		return trigger;
 	}
 	
 	/**
@@ -100,15 +140,24 @@ public final class TriggerUtils
 		{
 			addSimpleTriggerImplProperties(triggerWrapper, (SimpleTriggerImpl) trigger);
 		}
+		if (trigger instanceof CronTriggerImpl)
+		{
+			addCronTriggerImplProperties(triggerWrapper, (CronTriggerImpl) trigger);
+		}
 		
 		return triggerWrapper;
 	}
-	
+
 	private static void addSimpleTriggerImplProperties(TriggerWrapper triggerWrapper, SimpleTriggerImpl trigger)
 	{
 		triggerWrapper.setRepeatCount(trigger.getRepeatCount());
 		triggerWrapper.setRepeatInterval(trigger.getRepeatInterval());
 		triggerWrapper.setTimesTriggered(trigger.getTimesTriggered());
+	}
+	
+	private static void addCronTriggerImplProperties(TriggerWrapper triggerWrapper, CronTriggerImpl trigger)
+	{
+		triggerWrapper.setCronExpression(trigger.getCronExpression());
 	}
 
 	private static Date getTime(long time)

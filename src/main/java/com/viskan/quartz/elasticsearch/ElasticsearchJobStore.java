@@ -300,7 +300,7 @@ public class ElasticsearchJobStore implements JobStore
 	@Override
 	public long getEstimatedTimeToReleaseAndAcquireTrigger()
 	{
-		return 50; // ??
+		return 10;
 	}
 
 	/** Always returns <code>true</code>. */
