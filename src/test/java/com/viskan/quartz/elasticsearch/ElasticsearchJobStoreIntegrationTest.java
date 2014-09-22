@@ -72,6 +72,8 @@ public class ElasticsearchJobStoreIntegrationTest extends Assert
 		assertTrue (store.checkExists(new TriggerKey("Job1_Trigger1", "Group1")));
 		assertFalse(store.checkExists(new TriggerKey("Job1_Trigger2", "Group1")));
 		assertFalse(store.checkExists(new TriggerKey("Job1_Trigger1", "Group2")));
+		assertEquals(1, store.getNumberOfJobs());
+		assertEquals(1, store.getNumberOfTriggers());
 	}
 
 	public static class TestJob implements Job

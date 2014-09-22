@@ -1,5 +1,6 @@
 package com.viskan.quartz.elasticsearch;
 
+import com.viskan.quartz.elasticsearch.domain.CountResult;
 import com.viskan.quartz.elasticsearch.domain.GetResult;
 import com.viskan.quartz.elasticsearch.domain.Hit;
 import com.viskan.quartz.elasticsearch.domain.JobWrapper;
@@ -553,14 +554,28 @@ public class ElasticsearchJobStore implements JobStore
 	@Override
 	public int getNumberOfJobs() throws JobPersistenceException
 	{
-		return 0;
+		String requestURL = getTypeURL(JOB_TYPE, "_count");
+		HttpResponse response = httpCommunicator.request("GET", requestURL);
+		if (isOK(response))
+		{
+			CountResult result = serializer.from(response.getResponseData(), new TypeToken<CountResult>() {});
+			return result.getCount();
+		}
+		throw new JobPersistenceException("Got HTTP response code " + response.getResponseCode() + " when counting jobs");
 	}
 
 	/** {@inheritDoc} */
 	@Override
 	public int getNumberOfTriggers() throws JobPersistenceException
 	{
-		return 0;
+		String requestURL = getTypeURL(TRIGGER_TYPE, "_count");
+		HttpResponse response = httpCommunicator.request("GET", requestURL);
+		if (isOK(response))
+		{
+			CountResult result = serializer.from(response.getResponseData(), new TypeToken<CountResult>() {});
+			return result.getCount();
+		}
+		throw new JobPersistenceException("Got HTTP response code " + response.getResponseCode() + " when counting triggers");
 	}
 
 	/** {@inheritDoc} */
