@@ -10,11 +10,13 @@ import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
+import org.quartz.JobKey;
 import org.quartz.JobPersistenceException;
 import org.quartz.ObjectAlreadyExistsException;
 import org.quartz.SchedulerConfigException;
 import org.quartz.SimpleScheduleBuilder;
 import org.quartz.TriggerBuilder;
+import org.quartz.TriggerKey;
 import org.quartz.spi.OperableTrigger;
 
 /**
@@ -63,6 +65,13 @@ public class ElasticsearchJobStoreIntegrationTest extends Assert
 		List<OperableTrigger> acquiredTriggers = store.acquireNextTriggers(0, 0, 0);
 		
 		assertEquals(1, acquiredTriggers.size());
+
+		assertTrue (store.checkExists(new JobKey("Job1", "Group1")));
+		assertFalse(store.checkExists(new JobKey("Job2", "Group1")));
+		assertFalse(store.checkExists(new JobKey("Job1", "Group2")));
+		assertTrue (store.checkExists(new TriggerKey("Job1_Trigger1", "Group1")));
+		assertFalse(store.checkExists(new TriggerKey("Job1_Trigger2", "Group1")));
+		assertFalse(store.checkExists(new TriggerKey("Job1_Trigger1", "Group2")));
 	}
 
 	public static class TestJob implements Job

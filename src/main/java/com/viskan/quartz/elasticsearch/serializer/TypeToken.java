@@ -10,7 +10,7 @@ import java.lang.reflect.Type;
  * 
  * @author Anton Johansson
  */
-public class TypeToken<T>
+public abstract class TypeToken<T>
 {
 	private final Type type;
 

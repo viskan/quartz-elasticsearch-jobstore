@@ -91,7 +91,7 @@ public class ElasticsearchJobStore implements JobStore
 	 */
 	public void setHostName(String hostName)
 	{
-		if (hostName == null || hostName.isEmpty())
+		if (hostName.isEmpty())
 		{
 			throw new IllegalArgumentException("The property 'hostName' cannot be empty");
 		}
@@ -139,7 +139,7 @@ public class ElasticsearchJobStore implements JobStore
 	 */
 	public void setIndexName(String indexName)
 	{
-		if (indexName == null || indexName.isEmpty())
+		if (indexName.isEmpty())
 		{
 			throw new IllegalArgumentException("The property 'indexName' cannot be empty");
 		}
@@ -173,10 +173,6 @@ public class ElasticsearchJobStore implements JobStore
 	 */
 	public String getSerializerClassName()
 	{
-		if (serializerClassName == null || serializerClassName.isEmpty())
-		{
-			throw new IllegalArgumentException("The property 'serializerClassName' cannot be empty");
-		}
 		return serializerClassName;
 	}
 
@@ -187,6 +183,10 @@ public class ElasticsearchJobStore implements JobStore
 	 */
 	public void setSerializerClassName(String serializerClassName)
 	{
+		if (serializerClassName.isEmpty())
+		{
+			throw new IllegalArgumentException("The property 'serializerClassName' cannot be empty");
+		}
 		this.serializerClassName = serializerClassName;
 	}
 
@@ -508,14 +508,18 @@ public class ElasticsearchJobStore implements JobStore
 	@Override
 	public boolean checkExists(JobKey jobKey) throws JobPersistenceException
 	{
-		return false;
+		String requestURL = getTypeURL(JOB_TYPE, jobKey.toString());
+		HttpResponse response = httpCommunicator.request("GET", requestURL);
+		return isOK(response);
 	}
 
 	/** {@inheritDoc} */
 	@Override
 	public boolean checkExists(TriggerKey triggerKey) throws JobPersistenceException
 	{
-		return false;
+		String requestURL = getTypeURL(TRIGGER_TYPE, triggerKey.toString());
+		HttpResponse response = httpCommunicator.request("GET", requestURL);
+		return isOK(response);
 	}
 
 	/** {@inheritDoc} */
