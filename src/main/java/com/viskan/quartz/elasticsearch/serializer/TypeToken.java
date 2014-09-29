@@ -7,7 +7,8 @@ import java.lang.reflect.Type;
  * Represents a simple type token.
  * <p>
  * Used to allow generic calls.
- * 
+ *
+ * @param <T> The type of the token.
  * @author Anton Johansson
  */
 public abstract class TypeToken<T>
