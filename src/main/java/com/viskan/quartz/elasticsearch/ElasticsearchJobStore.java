@@ -365,10 +365,7 @@ public class ElasticsearchJobStore implements JobStore
 			Set<? extends Trigger> triggers = triggersAndJobs.get(job);
 			for (Trigger trigger : triggers)
 			{
-				if (trigger instanceof OperableTrigger)
-				{
-					storeTrigger((OperableTrigger) trigger, replace);
-				}
+				storeTrigger((OperableTrigger) trigger, replace);
 			}
 		}
 	}
@@ -401,7 +398,7 @@ public class ElasticsearchJobStore implements JobStore
 		{
 			failed |= !removeJob(key);
 		}
-		return failed;
+		return !failed;
 	}
 
 	/** {@inheritDoc} */
@@ -486,7 +483,7 @@ public class ElasticsearchJobStore implements JobStore
 		{
 			failed |= !removeTrigger(key);
 		}
-		return failed;
+		return !failed;
 	}
 
 	/** {@inheritDoc} */

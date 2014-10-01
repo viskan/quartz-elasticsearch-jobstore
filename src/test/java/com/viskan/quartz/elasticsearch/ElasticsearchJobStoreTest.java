@@ -3,9 +3,20 @@ package com.viskan.quartz.elasticsearch;
 import com.viskan.quartz.elasticsearch.http.HttpCommunicator;
 import com.viskan.quartz.elasticsearch.http.HttpResponse;
 
+import static java.util.Arrays.asList;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
 import static org.quartz.JobBuilder.newJob;
+import static org.quartz.SimpleScheduleBuilder.simpleSchedule;
+import static org.quartz.TriggerBuilder.newTrigger;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -19,7 +30,9 @@ import org.quartz.JobKey;
 import org.quartz.JobPersistenceException;
 import org.quartz.ObjectAlreadyExistsException;
 import org.quartz.SchedulerConfigException;
+import org.quartz.Trigger;
 import org.quartz.TriggerKey;
+import org.quartz.spi.OperableTrigger;
 
 /**
  * Unit tests of {@link ElasticsearchJobStore}.
@@ -30,6 +43,7 @@ public class ElasticsearchJobStoreTest extends Assert
 {
 	private ElasticsearchJobStore store;
 	@Mock private HttpCommunicator httpCommunicator;
+	private Date testDate;
 
 	@Before
 	public void setUp() throws SchedulerConfigException
@@ -43,6 +57,7 @@ public class ElasticsearchJobStoreTest extends Assert
 		store.setIndexName("index");
 		store.initialize(null, null);
 		store.createHttpCommunicator(httpCommunicator);
+		testDate = new Date(1416826800844L);
 	}
 	
 	@Test
@@ -112,7 +127,7 @@ public class ElasticsearchJobStoreTest extends Assert
 	}
 	
 	@Test
-	public void test_successfully_storing_job() throws ObjectAlreadyExistsException, JobPersistenceException
+	public void test_storing_job_successfully() throws ObjectAlreadyExistsException, JobPersistenceException
 	{
 		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job1", "{\"name\":\"Job1\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}"))
 			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_job\",\"_id\":\"Group1.Job1\",\"_version\":1,\"created\":true}"));
@@ -160,6 +175,245 @@ public class ElasticsearchJobStoreTest extends Assert
 			.build();
 		
 		store.storeJob(newJob, false);
+	}
+	
+	@Test
+	public void test_storing_job_and_trigger() throws ObjectAlreadyExistsException, JobPersistenceException
+	{
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job1", "{\"name\":\"Job1\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_job\",\"_id\":\"Group1.Job1\",\"_version\":1,\"created\":true}"));
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1", "{\"name\":\"Trigger1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger1\",\"_version\":1,\"created\":true}"));
+
+		JobDetail newJob = newJob()
+			.ofType(TestJob.class)
+			.withIdentity("Job1", "Group1")
+			.usingJobData("stringKey", "stringValue")
+			.usingJobData("intKey", 5)
+			.usingJobData("booleanKey", true)
+			.build();
+
+		OperableTrigger newTrigger = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger1", "Group1")
+			.forJob(newJob)
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.usingJobData("SomeKey", "SomeValue")
+			.build();
+		
+		newTrigger.setStartTime(testDate);
+		
+		store.storeJobAndTrigger(newJob, newTrigger);
+
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job1", "{\"name\":\"Job1\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}");
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1", "{\"name\":\"Trigger1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}");
+		verifyNoMoreInteractions(httpCommunicator);
+	}
+	
+	@Test
+	public void test_storing_jobs_and_triggers() throws ObjectAlreadyExistsException, JobPersistenceException
+	{
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job1", "{\"name\":\"Job1\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_job\",\"_id\":\"Group1.Job1\",\"_version\":1,\"created\":true}"));
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job2", "{\"name\":\"Job2\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_job\",\"_id\":\"Group1.Job2\",\"_version\":1,\"created\":true}"));
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1_1", "{\"name\":\"Trigger1_1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger1_1\",\"_version\":1,\"created\":true}"));
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1_2", "{\"name\":\"Trigger1_2\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger1_2\",\"_version\":1,\"created\":true}"));
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger2_1", "{\"name\":\"Trigger2_1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job2\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger2_1\",\"_version\":1,\"created\":true}"));
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger2_2", "{\"name\":\"Trigger2_2\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job2\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger2_2\",\"_version\":1,\"created\":true}"));
+
+	
+		JobDetail newJob1 = newJob()
+			.ofType(TestJob.class)
+			.withIdentity("Job1", "Group1")
+			.usingJobData("stringKey", "stringValue")
+			.usingJobData("intKey", 5)
+			.usingJobData("booleanKey", true)
+			.build();
+		
+		JobDetail newJob2 = newJob()
+			.ofType(TestJob.class)
+			.withIdentity("Job2", "Group1")
+			.usingJobData("stringKey", "stringValue")
+			.usingJobData("intKey", 5)
+			.usingJobData("booleanKey", true)
+			.build();
+
+		OperableTrigger newTrigger1_1 = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger1_1", "Group1")
+			.forJob(newJob1)
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.build();
+
+		OperableTrigger newTrigger1_2 = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger1_2", "Group1")
+			.forJob(newJob1)
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.build();
+
+		OperableTrigger newTrigger2_1 = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger2_1", "Group1")
+			.forJob(newJob2)
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.build();
+
+		OperableTrigger newTrigger2_2 = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger2_2", "Group1")
+			.forJob(newJob2)
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.build();
+
+		newTrigger1_1.setStartTime(testDate);
+		newTrigger1_2.setStartTime(testDate);
+		newTrigger2_1.setStartTime(testDate);
+		newTrigger2_2.setStartTime(testDate);
+		
+		Set<Trigger> job1Triggers = new TreeSet<>();
+		job1Triggers.add(newTrigger1_1);
+		job1Triggers.add(newTrigger1_2);
+		
+		Set<Trigger> job2Triggers = new TreeSet<>();
+		job2Triggers.add(newTrigger2_1);
+		job2Triggers.add(newTrigger2_2);
+		
+		Map<JobDetail, Set<? extends Trigger>> triggersAndJobs = new HashMap<>();
+		triggersAndJobs.put(newJob1, job1Triggers);
+		triggersAndJobs.put(newJob2, job2Triggers);
+		
+		store.storeJobsAndTriggers(triggersAndJobs, false);
+
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job1", "{\"name\":\"Job1\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}");
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_job/Group1.Job2", "{\"name\":\"Job2\",\"group\":\"Group1\",\"jobClass\":\"com.viskan.quartz.elasticsearch.ElasticsearchJobStoreTest$TestJob\",\"dataMap\":{\"intKey\":5,\"booleanKey\":true,\"stringKey\":\"stringValue\"}}");
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1_1", "{\"name\":\"Trigger1_1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}");
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1_2", "{\"name\":\"Trigger1_2\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}");
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger2_1", "{\"name\":\"Trigger2_1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job2\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}");
+		verify(httpCommunicator).request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger2_2", "{\"name\":\"Trigger2_2\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job2\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}");
+		verifyNoMoreInteractions(httpCommunicator);
+	}
+	
+	@Test
+	public void test_removing_job_successfully() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_job/Group1.Job1")).thenReturn(new HttpResponse(200, "OK", ""));
+		boolean success = store.removeJob(new JobKey("Job1", "Group1"));
+		assertTrue(success);
+	}
+	
+	@Test
+	public void test_removing_job_that_does_not_exist() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_job/Group1.Job1")).thenReturn(new HttpResponse(404, "Not Found", ""));
+		boolean success = store.removeJob(new JobKey("Job1", "Group1"));
+		assertFalse(success);
+	}
+	
+	@Test
+	public void test_removing_several_jobs_successfully() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_job/Group1.Job1")).thenReturn(new HttpResponse(200, "OK", ""));
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_job/Group1.Job2")).thenReturn(new HttpResponse(200, "OK", ""));
+		boolean success = store.removeJobs(asList(new JobKey("Job1", "Group1"), new JobKey("Job2", "Group1")));
+		assertTrue(success);
+	}
+	
+	@Test
+	public void test_removing_several_jobs_and_one_does_not_exist() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_job/Group1.Job1")).thenReturn(new HttpResponse(200, "OK", ""));
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_job/Group1.Job2")).thenReturn(new HttpResponse(404, "Not Found", ""));
+		boolean success = store.removeJobs(asList(new JobKey("Job1", "Group1"), new JobKey("Job2", "Group1")));
+		assertFalse(success);
+	}
+	
+	@Test
+	public void test_storing_trigger_successfully() throws ObjectAlreadyExistsException, JobPersistenceException
+	{
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1", "{\"name\":\"Trigger1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(201, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger1\",\"_version\":1,\"created\":true}"));
+		
+		OperableTrigger trigger = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger1", "Group1")
+			.forJob("Job1", "Group1")
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.usingJobData("SomeKey", "SomeValue")
+			.build();
+		
+		trigger.setStartTime(testDate);
+		
+		store.storeTrigger(trigger, false);
+	}
+	
+	@Test(expected = ObjectAlreadyExistsException.class)
+	public void test_storing_trigger_but_one_already_exists() throws ObjectAlreadyExistsException, JobPersistenceException
+	{
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1", "{\"name\":\"Trigger1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(200, "{\"_index\":\"scheduler\",\"_type\":\"quartz_trigger\",\"_id\":\"Group1.Trigger1\",\"_version\":1,\"created\":false}"));
+
+		OperableTrigger trigger = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger1", "Group1")
+			.forJob("Job1", "Group1")
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.usingJobData("SomeKey", "SomeValue")
+			.build();
+		
+		trigger.setStartTime(testDate);
+		
+		store.storeTrigger(trigger, false);
+	}
+	
+	@Test(expected = JobPersistenceException.class)
+	public void test_storing_trigger_but_invalid_http_code_is_returned() throws ObjectAlreadyExistsException, JobPersistenceException
+	{
+		when(httpCommunicator.request("PUT", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1", "{\"name\":\"Trigger1\",\"group\":\"Group1\",\"triggerClass\":\"SIMPLE_TRIGGER_IMPL\",\"jobName\":\"Job1\",\"jobGroup\":\"Group1\",\"state\":0,\"startTime\":1416826800844,\"endTime\":0,\"nextFireTime\":0,\"previousFireTime\":0,\"priority\":0,\"repeatCount\":0,\"repeatInterval\":30000,\"timesTriggered\":0}"))
+			.thenReturn(response(423, ""));
+
+		OperableTrigger trigger = (OperableTrigger) newTrigger()
+			.withIdentity("Trigger1", "Group1")
+			.forJob("Job1", "Group1")
+			.withSchedule(simpleSchedule().withIntervalInSeconds(30))
+			.usingJobData("SomeKey", "SomeValue")
+			.build();
+		
+		trigger.setStartTime(testDate);
+		
+		store.storeTrigger(trigger, false);
+	}
+	
+	@Test
+	public void test_removing_trigger_successfully() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1")).thenReturn(new HttpResponse(200, "OK", ""));
+		boolean success = store.removeTrigger(new TriggerKey("Trigger1", "Group1"));
+		assertTrue(success);
+	}
+	
+	@Test
+	public void test_removing_trigger_that_does_not_exist() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1")).thenReturn(new HttpResponse(404, "Not Found", ""));
+		boolean success = store.removeTrigger(new TriggerKey("Trigger1", "Group1"));
+		assertFalse(success);
+	}
+	
+	@Test
+	public void test_removing_several_triggers_successfully() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1")).thenReturn(new HttpResponse(200, "OK", ""));
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_trigger/Group1.Trigger2")).thenReturn(new HttpResponse(200, "OK", ""));
+		boolean success = store.removeTriggers(asList(new TriggerKey("Trigger1", "Group1"), new TriggerKey("Trigger2", "Group1")));
+		assertTrue(success);
+	}
+	
+	@Test
+	public void test_removing_several_triggers_and_one_does_not_exist() throws JobPersistenceException
+	{
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_trigger/Group1.Trigger1")).thenReturn(new HttpResponse(200, "OK", ""));
+		when(httpCommunicator.request("DELETE", "http://localhost:9200/index/prefix_trigger/Group1.Trigger2")).thenReturn(new HttpResponse(404, "Not Found", ""));
+		boolean success = store.removeTriggers(asList(new TriggerKey("Trigger1", "Group1"), new TriggerKey("Trigger2", "Group1")));
+		assertFalse(success);
 	}
 	
 	@Test
