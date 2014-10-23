@@ -1,4 +1,4 @@
-package com.viskan.quartz.elasticsearch;
+package com.viskan.quartz.elasticsearch.common;
 
 import com.viskan.quartz.elasticsearch.serializer.ISerializer;
 import com.viskan.quartz.elasticsearch.serializer.TypeToken;

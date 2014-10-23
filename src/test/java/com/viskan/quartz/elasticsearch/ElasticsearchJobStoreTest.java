@@ -1,5 +1,6 @@
 package com.viskan.quartz.elasticsearch;
 
+import com.viskan.quartz.elasticsearch.common.GsonSerializer;
 import com.viskan.quartz.elasticsearch.http.HttpCommunicator;
 import com.viskan.quartz.elasticsearch.http.HttpResponse;
 

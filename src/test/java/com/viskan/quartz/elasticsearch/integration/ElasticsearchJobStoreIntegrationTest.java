@@ -1,7 +1,8 @@
-package com.viskan.quartz.elasticsearch;
+package com.viskan.quartz.elasticsearch.integration;
 
 import java.util.List;
 
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -19,16 +20,19 @@ import org.quartz.TriggerBuilder;
 import org.quartz.TriggerKey;
 import org.quartz.spi.OperableTrigger;
 
+import com.viskan.quartz.elasticsearch.ElasticsearchJobStore;
+import com.viskan.quartz.elasticsearch.common.GsonSerializer;
+
 /**
- * This is a manual test used in early stages of development.
- * <p>
- * It currently requires a 
+ * Fully tests the quartz-elasticsearch-jobstore by firing up an embedded
+ * elasticsearch node and running against it.
  *
  * @author Anton Johansson
  */
 public class ElasticsearchJobStoreIntegrationTest extends Assert
 {
 	private ElasticsearchJobStore store;
+	private ElasticsearchServer elasticsearchServer;
 
 	@Before
 	public void setUp() throws SchedulerConfigException
@@ -39,15 +43,23 @@ public class ElasticsearchJobStoreIntegrationTest extends Assert
 		store.setIndexName("scheduler");
 		store.setSerializerClassName(GsonSerializer.class.getName());
 		store.initialize(null, null);
+
+		elasticsearchServer = new ElasticsearchServer();
 	}
-	
+
+	@After
+	public void tearDown()
+	{
+		elasticsearchServer.shutdown();
+	}
+
 	@Test
 	public void test_integration() throws ObjectAlreadyExistsException, JobPersistenceException, InterruptedException
 	{
 		JobDetail newJob = JobBuilder.newJob(TestJob.class)
 				.withIdentity("Job1", "Group1")
 				.build();
-			
+
 		OperableTrigger newTrigger = (OperableTrigger) TriggerBuilder.newTrigger()
 			.withIdentity("Job1_Trigger1", "Group1")
 			.forJob(newJob)
@@ -56,14 +68,14 @@ public class ElasticsearchJobStoreIntegrationTest extends Assert
 				.repeatForever())
 			.startNow()
 			.build();
-		
+
 		store.storeJobAndTrigger(newJob, newTrigger);
-		
+
 		// Let the Elasticsearch instance index the new data
 		Thread.sleep(5000);
-		
+
 		List<OperableTrigger> acquiredTriggers = store.acquireNextTriggers(0, 0, 0);
-		
+
 		assertEquals(1, acquiredTriggers.size());
 
 		assertTrue (store.checkExists(new JobKey("Job1", "Group1")));
